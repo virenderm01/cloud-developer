@@ -2,7 +2,7 @@
   "name": "udacity-c2-restapi",
   "version": "1.0.0",
   "description": "",
-  "main": "src/server.js",
+  "main": "www/server.js",
   "scripts": {
     "start": "node .",
     "tsc": "tsc",
@@ -16,10 +16,10 @@
   "author": "Gabriel Ruttner",
   "license": "ISC",
   "dependencies": {
-    "@types/bcrypt": "^3.0.0",
+    "@types/bcryptjs": "^2.4.2",
     "@types/jsonwebtoken": "^8.3.2",
     "aws-sdk": "^2.492.0",
-    "bcrypt": "^3.0.6",
+    "bcryptjs": "^2.4.3",
     "body-parser": "^1.19.0",
     "email-validator": "^2.0.4",
     "express": "^4.17.1",
