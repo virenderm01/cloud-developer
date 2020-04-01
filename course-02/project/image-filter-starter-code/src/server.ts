@@ -31,6 +31,38 @@ import {filterImageFromURL, deleteLocalFiles} from './util/util';
 
   //! END @TODO1
   
+  app.get( "/filteredimage", async ( req, res ) => {
+    let {image_url} = req.query;
+    console.log(image_url);
+    if(!image_url){
+      return res.status(400).send("Please enter a image URL.");
+
+    }
+    if(!image_url || !image_url.match(/\.(jpg|JPG|jpeg|JPEG|png|PNG|gif|GIF)$/)){
+      return res.status(422).send("Image format not supported!");
+    }
+    let compressedImage = filterImageFromURL(image_url);
+    
+    compressedImage.then(
+      function(result) {
+        res.sendFile(result, function(err) {
+          if (err) {
+          } else {
+            let results: Array<string> = [result];
+            deleteLocalFiles(results);
+          }
+        });
+      },
+      function(err) {
+        console.log(err); // Error: "It broke"
+        res.status(500).send("Error processing the image");
+      }
+    );
+    
+    
+  } );
+
+
   // Root Endpoint
   // Displays a simple message to the user
   app.get( "/", async ( req, res ) => {
