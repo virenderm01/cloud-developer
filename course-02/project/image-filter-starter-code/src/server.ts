@@ -30,6 +30,8 @@ import {filterImageFromURL, deleteLocalFiles} from './util/util';
   /**************************************************************************** */
 
   //! END @TODO1
+  // deployed path: http://udagram-image-filter-vir-dev-dev.us-east-2.elasticbeanstalk.com
+  // example: http://udagram-image-filter-vir-dev-dev.us-east-2.elasticbeanstalk.com/filteredimage?image_url=https://image.shutterstock.com/image-photo/british-blue-kitten-very-beautiful-600w-796071583.jpg
   
   app.get( "/filteredimage", async ( req, res ) => {
     let {image_url} = req.query;
