@@ -13,4 +13,4 @@ before_install:
   - chmod +x ./kubectl
   - sudo mv ./kubectl /usr/local/bin/kubectl
 install:
-  -echo `hello udacity`
+  -echo 'hello udacity'
