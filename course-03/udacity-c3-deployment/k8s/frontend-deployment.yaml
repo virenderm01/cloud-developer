@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    service: frontend
+  name: frontend
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: frontend
+        api: external        
+    spec:
+      containers:
+      - image: virenderm01/udacity-frontend:local
+        name: frontend
+        imagePullPolicy: Always          
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"                
+      restartPolicy: Always
+
