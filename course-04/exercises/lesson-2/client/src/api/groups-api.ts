@@ -7,8 +7,9 @@ export async function getGroups(): Promise<GroupModel[]> {
 
   const response = await fetch(`${apiEndpoint}/groups`)
   const result = await response.json()
-
-  return result.items
+ 
+  const {items} = JSON.parse(result.body);
+  return items;
 }
 
 export async function createGroup(newGroup: GroupUploadInfo): Promise<GroupModel> {

@@ -30,3 +30,10 @@ export async function createImage(
 
   return await reply.json()
 }
+
+export async function uploadFile(uploadUrl: string, file: Buffer): Promise<void> {
+  await fetch(uploadUrl, {
+    method: 'PUT',
+    body: file
+  })
+}
