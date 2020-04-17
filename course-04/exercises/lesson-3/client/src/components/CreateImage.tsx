@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Form, Button } from 'semantic-ui-react'
 import { createImage, uploadFile } from '../api/images-api'
+import Auth from '../auth/Auth'
 
 enum UploadState {
   NoUpload,
@@ -14,6 +15,7 @@ interface CreateImageProps {
       groupId: string
     }
   }
+  auth: Auth
 }
 
 interface CreateImageState {
@@ -56,7 +58,7 @@ export class CreateImage extends React.PureComponent<
       }
 
       this.setUploadState(UploadState.UploadingData)
-      const uploadInfo = await createImage({
+      const uploadInfo = await createImage(this.props.auth.getIdToken(),{
         groupId: this.props.match.params.groupId,
         title: this.state.title
       })
@@ -95,7 +97,7 @@ export class CreateImage extends React.PureComponent<
             />
           </Form.Field>
           <Form.Field>
-            <label>Title</label>
+            <label>Image</label>
             <input
               type="file"
               accept= "image/*"
@@ -114,6 +116,7 @@ export class CreateImage extends React.PureComponent<
     return (
       <div>
         {this.state.uploadState === UploadState.UploadingData && <p>Uploading image metadata</p>}
+        {this.state.uploadState === UploadState.UploadingFile && <p>Uploading file</p>}
         <Button
           loading={this.state.uploadState !== UploadState.NoUpload}
           type="submit"

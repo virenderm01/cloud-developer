@@ -11,7 +11,7 @@ export async function getImages(groupId: string): Promise<ImageModel[]> {
   return result.items
 }
 
-export async function createImage(
+export async function createImage(idToken: string,
   newImage: ImageUploadInfo
 ): Promise<ImageUploadResponse> {
 
@@ -20,7 +20,9 @@ export async function createImage(
     {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${idToken}`
+
       },
       body: JSON.stringify({
         title: newImage.title
