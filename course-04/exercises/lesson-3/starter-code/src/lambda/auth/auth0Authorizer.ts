@@ -1,22 +1,27 @@
-import {CustomAuthorizerEvent, CustomAuthorizerHandler, CustomAuthorizerResult} from 'aws-lambda';
+import {CustomAuthorizerEvent,  CustomAuthorizerResult} from 'aws-lambda';
 import 'source-map-support/register'
 import {verify} from 'jsonwebtoken'
 import {JwtToken} from '../../auth/JwtToken'
-import * as AWS from 'aws-sdk';
+//import * as AWS from 'aws-sdk';
+import * as middy from 'middy';
+import {secretsManager} from 'middy/middlewares';
 
 const secretId = process.env.AUTH_0_SECRET_ID
 const secretField = process.env.AUTH_0_SECRET_FIELD
 
-const client = new AWS.SecretsManager();
+
+
+//const client = new AWS.SecretsManager();
 
 //Cache secret in case lambda is not recreated
-let cachedSecret: string=undefined;
+//let cachedSecret: string=undefined;
 
-export const handler: CustomAuthorizerHandler = async(event: CustomAuthorizerEvent): Promise<CustomAuthorizerResult> => {
+export const handler = middy(async(event: CustomAuthorizerEvent, context): Promise<CustomAuthorizerResult> => {
 
     try{
-        const decodedToken = await verifyToken(event.authorizationToken);
-        console.log('User was authorized.');
+        const decodedToken = verifyToken(event.authorizationToken,
+            context.AUTH0_SECRET[secretField]);
+        console.log('User was authorized.',decodedToken);
 
         return {
             principalId: decodedToken.sub,
@@ -48,10 +53,10 @@ export const handler: CustomAuthorizerHandler = async(event: CustomAuthorizerEve
             }
         }
     }
-}
+})
 
 
-async function verifyToken(authHeader: string): Promise<JwtToken>{
+ function verifyToken(authHeader: string, secret:string): JwtToken{
     if(!authHeader){
         throw new Error('No authorizatin header')
     }
@@ -64,17 +69,29 @@ async function verifyToken(authHeader: string): Promise<JwtToken>{
 
     const token = split[1];
 
-    const secretObject = await getSecret();
-    const secret = secretObject(secretField);
+    // const secretObject = await getSecret();
+    // const secret = secretObject(secretField);
     return verify(token,secret) as JwtToken
 }
 
-async function getSecret(){
-    if(cachedSecret) return cachedSecret
+// async function getSecret(){
+//     if(cachedSecret) return cachedSecret
 
-    const data = await client.getSecretValue({ SecretId: secretId }).promise();
+//     const data = await client.getSecretValue({ SecretId: secretId }).promise();
                
-    cachedSecret = data.SecretString
+//     cachedSecret = data.SecretString
 
-    return JSON.parse(cachedSecret);
-}
+//     return JSON.parse(cachedSecret);
+// }
+
+
+handler.use(
+    secretsManager({
+        cache: true,
+        cacheExpiryInMillis:6000,
+        throwOnFailedCall: true,
+        secrets: {
+            AUTH0_SECRET: secretId
+        }
+    })
+)

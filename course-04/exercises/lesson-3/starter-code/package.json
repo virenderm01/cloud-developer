@@ -12,6 +12,7 @@
     "elasticsearch": "^15.4.1",
     "jimp": "^0.6.4",
     "http-aws-es": "^6.0.0",
+    "middy": "^0.25.0",
     "jsonwebtoken": "^8.5.1"
   },
   "devDependencies": {
