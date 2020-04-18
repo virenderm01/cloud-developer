@@ -23,7 +23,7 @@ provider:
     THUMBNAILS_S3_BUCKET: serverless-udagram-thumbnail-vir-${self:provider.stage}
     AUTH_0_SECRET_ID: Auth0Secret-${self:provider.stage}
     AUTH_0_SECRET_FIELD: auth0Secret
-
+    
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -84,6 +84,8 @@ functions:
 
   Auth:
     handler: src/lambda/auth/auth0Authorizer.handler
+  RS256:
+    handler: src/lambda/auth/rs256Auth0Authorizer.handler
 
   GetGroups:
     handler: src/lambda/http/getGroups.handler
@@ -100,7 +102,7 @@ functions:
           method: post
           path: groups
           cors: true
-          authorizer: Auth
+          authorizer: RS256
           reqValidatorName: RequestBodyValidator
           documentation:
             summary: Create a new group
@@ -123,7 +125,7 @@ functions:
           method: post
           path: groups/{groupId}/images
           cors: true
-          authorizer: Auth
+          authorizer: RS256
           reqValidatorName: RequestBodyValidator
           documentation:
             summary: Create an Image

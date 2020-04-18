@@ -1,9 +1,10 @@
-import { APIGatewayProxyHandler, APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
 import 'source-map-support/register'
 import * as AWS  from 'aws-sdk'
 import * as uuid from 'uuid'
 import * as middy from 'middy';
 import {cors} from 'middy/middlewares';
+import {getUserId} from '../../auth/utils';
 
 const docClient = new AWS.DynamoDB.DocumentClient()
 const s3 = new AWS.S3({
@@ -30,7 +31,11 @@ export const handler = middy(async (event: APIGatewayProxyEvent): Promise<APIGat
     }
   }
 
+  const authorization = event.headers.Authorization
+  const split = authorization.split(' ')
+  const jwtToken = split[1]
   const imageId = uuid.v4()
+  const userId = getUserId(jwtToken)
 
   const parsedBody = JSON.parse(event.body)
   let dateTime = new Date().toISOString();
@@ -40,6 +45,7 @@ export const handler = middy(async (event: APIGatewayProxyEvent): Promise<APIGat
     groupId: groupId,
     timestamp: dateTime,
     imageUrl: `https://${bucketName}.s3.amazonaws.com/${imageId}`,
+    userId: userId,
     ...parsedBody
   }
 
