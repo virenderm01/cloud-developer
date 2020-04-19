@@ -5,19 +5,38 @@ plugins:
   - serverless-webpack
   - serverless-reqvalidator-plugin
   - serverless-aws-documentation
+  - serverless-dynamodb-local
+  - serverless-offline
+  - serverless-plugin-canary-deployments
+  - serverless-iam-roles-per-function
+
+
+# package:
+#   individually: true
 
 provider:
+
+  tracing:
+    lambda: true
+    apiGateway: true
+
   name: aws
-  runtime: nodejs8.10
+  runtime: nodejs12.x
 
   stage: ${opt:stage, 'dev'}
-  region: ${opt:region, 'us-east-1'}
+  region: ${opt:region, 'us-east-2'}
 
   environment:
     GROUPS_TABLE: Groups-${self:provider.stage}
     IMAGES_TABLE: Images-${self:provider.stage}
     IMAGE_ID_INDEX: ImageIdIndex
-
+    IMAGES_S3_BUCKET: serverless-udagram-images-vir-${self:provider.stage}
+    SIGNED_URL_EXPIRATION: 300
+    CONNECTIONS_TABLE: Connections-${self:provider.stage}
+    THUMBNAILS_S3_BUCKET: serverless-udagram-thumbnail-vir-${self:provider.stage}
+    AUTH_0_SECRET_ID: Auth0Secret-${self:provider.stage}
+    AUTH_0_SECRET_FIELD: auth0Secret
+    
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -28,13 +47,54 @@ provider:
     - Effect: Allow
       Action:
         - dynamodb:Query
+        - dynamodb:PutItem
       Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}
     - Effect: Allow
       Action:
         - dynamodb:Query
       Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}/index/${self:provider.environment.IMAGE_ID_INDEX}
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+        - s3:GetObject
+      Resource: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*
+    - Effect: Allow
+      Action:
+        - s3:PutObject
+      Resource: arn:aws:s3:::${self:provider.environment.THUMBNAILS_S3_BUCKET}/*
+    - Effect: Allow
+      Action:
+        - dynamodb:Scan
+        - dynamodb:PutItem
+        - dynamodb:DeleteItem
+      Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.CONNECTIONS_TABLE}
+    - Effect: Allow
+      Action:
+        - secretsmanager:GetSecretValue
+      Resource: !Ref Auth0Secret
+    - Effect: Allow
+      Action:
+        - kms:Decrypt
+      Resource: !GetAtt KMSKey.Arn
+    - Effect: Allow
+      Action:
+        - codedeploy:*
+      Resource:
+        - '*'
 
 custom:
+  topicName: imagesTopic-${self:provider.stage}
+
+  serverless-offline:
+    port: 3003
+
+  dynamodb:
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+    stages: # Add this section of the config
+      - dev
   documentation:
     api:
       info:
@@ -45,8 +105,16 @@ custom:
       - name: GroupRequest
         contentType: application/json
         schema: ${file(models/create-group-request.json)}
+      - name: ImageRequest
+        contentType: application/json
+        schema: ${file(models/create-image-request.json)}
 
 functions:
+
+  Auth:
+    handler: src/lambda/auth/auth0Authorizer.handler
+  RS256:
+    handler: src/lambda/auth/rs256Auth0Authorizer.handler
 
   GetGroups:
     handler: src/lambda/http/getGroups.handler
@@ -63,12 +131,16 @@ functions:
           method: post
           path: groups
           cors: true
+          authorizer: RS256
           reqValidatorName: RequestBodyValidator
           documentation:
             summary: Create a new group
             description: Create a new group
             requestModels:
               'application/json': GroupRequest
+    deploymentSettings:
+      type: Linear10PercentEvery1Minute
+      alias: Live
 
   GetImages:
     handler: src/lambda/http/getImages.handler
@@ -77,12 +149,96 @@ functions:
           method: get
           path: groups/{groupId}/images
           cors: true
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.IMAGES_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:GetItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.GROUPS_TABLE}
 
   CreateImage:
     handler: src/lambda/http/createImage.handler
+    events:
+      - http:
+          method: post
+          path: groups/{groupId}/images
+          cors: true
+          authorizer: RS256
+          reqValidatorName: RequestBodyValidator
+          documentation:
+            summary: Create an Image
+            description: Create an Image
+            requestModels:
+              'application/json': ImageRequest
+
+  SendUploadNotifications:
+    environment:
+      STAGE: ${self:provider.stage}
+      API_ID:
+        Ref: WebsocketsApi
+    handler: src/lambda/s3/sendNotifications.handler
+    events:
+      - sns:
+          arn:
+            Fn::Join:
+              - ':'
+              - - arn:aws:sns
+                - !Ref AWS::Region
+                - !Ref AWS::AccountId
+                - ${self:custom.topicName}
+          topicName: ${self:custom.topicName}
+            
+
+  ConnectHandler:
+    handler: src/lambda/websocket/connect.handler
+    events:
+      - websocket:
+          route: $connect
+            
+  DisconnectHandler:
+    handler: src/lambda/websocket/disconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
+  ResizeImage:
+    handler: src/lambda/s3/resizeImage.handler
+    events:
+      - sns:
+          arn:
+            Fn::Join:
+              - ':'
+              - - arn:aws:sns
+                - !Ref AWS::Region
+                - !Ref AWS::AccountId
+                - ${self:custom.topicName}
+          topicName: ${self:custom.topicName}
+
+  SyncWithElasticSearch:
+    environment:
+      ES_ENDPOINT: !GetAtt ImagesSearch.DomainEndpoint
+    handler: src/lambda/dynamoDb/elasticSearchSync.handler
+    events:
+      - stream:
+          type: dynamodb
+          arn: !GetAtt ImagesDynamoDBTable.StreamArn
+
 
 resources:
   Resources:
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origiin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+        ResponseType: DEFAULT_4XX
+        RestApiId: 
+          Ref: ApiGatewayRestApi
+
     GroupsDynamoDBTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -110,6 +266,8 @@ resources:
             KeyType: HASH
           - AttributeName: timestamp
             KeyType: RANGE
+        StreamSpecification:
+          StreamViewType: NEW_IMAGE
         BillingMode: PAY_PER_REQUEST
         TableName: ${self:provider.environment.IMAGES_TABLE}
         GlobalSecondaryIndexes:
@@ -120,6 +278,21 @@ resources:
             Projection:
               ProjectionType: ALL
 
+    WebSocketConnectionsDynamoDBTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        AttributeDefinitions:
+          -
+            AttributeName: id
+            AttributeType: S
+        KeySchema:
+          -
+            AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${self:provider.environment.CONNECTIONS_TABLE}
+         
+              
     RequestBodyValidator:
       Type: AWS::ApiGateway::RequestValidator
       Properties:
@@ -128,4 +301,143 @@ resources:
           Ref: ApiGatewayRestApi
         ValidateRequestBody: true
         ValidateRequestParameters: false
+    
+    AttachmentsBucket:
+      Type: AWS::S3::Bucket
+      DependsOn: SNSTopicPolicy
+      Properties:
+        BucketName: ${self:provider.environment.IMAGES_S3_BUCKET}
+        NotificationConfiguration:
+          TopicConfigurations:
+          - Event: s3:ObjectCreated:Put
+            Topic: !Ref ImagesTopic
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
 
+    # SendUploadNotificationsPermission:
+    #   Type: AWS::Lambda::Permission
+    #   Properties:
+    #     FunctionName: !Ref SendUploadNotificationsLambdaFunction
+    #     Principal: s3.amazonaws.com
+    #     Action: lambda:InvokeFunction
+    #     SourceAccount: !Ref AWS::AccountId
+    #     SourceArn: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}
+
+    SNSTopicPolicy:
+      Type: AWS::SNS::TopicPolicy
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: "*"
+              Action: sns:Publish
+              Resource:
+                !Ref ImagesTopic
+              Condition:
+                ArnLike:
+                  AWS:SourceArn: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}
+        Topics:
+          - !Ref ImagesTopic
+
+    ThumbnailsBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:provider.environment.THUMBNAILS_S3_BUCKET}
+
+
+    BucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        PolicyDocument:
+          Id: MyPolicy
+          Version: "2012-10-17"
+          Statement:
+            - Sid: PublicReadForGetBucketObjects
+              Effect: Allow
+              Principal: '*'
+              Action: 's3:GetObject'
+              Resource: 'arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*'
+        Bucket: !Ref AttachmentsBucket
+  
+    ImagesTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        DisplayName: Image bucket topicName
+        TopicName: ${self:custom.topicName}
+
+    ImagesSearch:
+      Type: AWS::Elasticsearch::Domain
+      Properties:
+        ElasticsearchVersion: '6.3'
+        DomainName: images-search-${self:provider.stage}
+        ElasticsearchClusterConfig:
+          DedicatedMasterEnabled: false
+          InstanceCount: '1'
+          ZoneAwarenessEnabled: false
+          InstanceType: t2.small.elasticsearch
+        EBSOptions:
+          EBSEnabled: true
+          Iops: 0
+          VolumeSize: 10
+          VolumeType: 'gp2'
+        
+        AccessPolicies:
+          Version: '2012-10-17'
+          Statement:
+            -
+              Effect: Allow
+              Principal:
+                AWS: '*'
+              Action: 'es:*'
+              Resource: '*'
+
+
+    KMSKey:
+      Type: AWS::KMS::Key
+      Properties:
+        Description: KMS Key to encrypt Auth0 secret
+        KeyPolicy:
+          Version: '2012-10-17'
+          Id: key-default-1
+          Statement:
+            - Sid: Allow Administration of the key
+              Effect: Allow
+              Principal:
+                AWS:
+                  Fn::Join:
+                    - ':'
+                    - - 'arn:aws:iam:'
+                      - Ref: AWS::AccountId
+                      - 'root'
+              Action:
+                - 'kms:*'
+              Resource: '*'
+
+    KMSKeyAlias:
+      Type: AWS::KMS::Alias
+      Properties:
+        AliasName: alias/auth0Key-${self:provider.stage}
+        TargetKeyId: !Ref KMSKey
+
+    Auth0Secret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: ${self:provider.environment.AUTH_0_SECRET_ID}
+        Description: Auth0 secret
+        KmsKeyId: !Ref KMSKey
+
+                  
