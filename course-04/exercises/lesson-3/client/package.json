@@ -18,7 +18,8 @@
     "typescript": "3.4.3"
   },
   "devDependencies": {
-    "@types/styled-components": "^4.1.14"
+    "@types/styled-components": "^4.1.14",
+    "auth0-js": "^9.11.1"
   },
   "scripts": {
     "start": "react-scripts start",

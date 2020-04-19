@@ -24,7 +24,8 @@ export class GroupsList extends React.PureComponent<GroupsListProps, GroupsListS
 
   async componentDidMount() {
     try {
-      const groups = await getGroups()
+      const groups = await getGroups();
+      //console.log(groups)
       this.setState({
         groups
       })
